@@ -1,0 +1,11 @@
+{
+    "redeploying_from_archive": false,
+    "mode": "debug",
+    "is_local_deployment": true,
+    "is_ssh_deployment": false,
+    "folder_name": "experiment",
+    "secret": {
+        "py/object": "uuid.UUID",
+        "hex": "776e33c3ccbe4302a86d1467b040759e"
+    }
+}
