@@ -1,259 +1,178 @@
-import random
-from typing import List
+# pylint: disable=unused-import,abstract-method,unused-argument
+##########################################################################################
+# Imports
+##########################################################################################
+from markupsafe import Markup
 
 import psynet.experiment
-from psynet.bot import Bot, advance_past_wait_pages
-from psynet.modular_page import ModularPage, PushButtonControl, TextControl
-from psynet.page import InfoPage
-from psynet.participant import Participant
-from psynet.sync import GroupBarrier, SimpleGrouper
-from psynet.timeline import CodeBlock, PageMaker, Timeline, join
-from psynet.trial.static import StaticNode, StaticTrial, StaticTrialMaker
-from psynet.utils import as_plain_text
+from psynet.modular_page import ImagePrompt, ModularPage, PushButtonControl, TextControl
+from psynet.timeline import Timeline, switch
+from psynet.trial.create_and_rate import (
+    CreateAndRateNode,
+    CreateAndRateTrialMakerMixin,
+    CreateTrialMixin,
+    RateTrialMixin,
+    SelectTrialMixin,
+)
+from psynet.trial.imitation_chain import ImitationChainTrial, ImitationChainTrialMaker
+from psynet.utils import get_logger
 
-# Overview #####################################################################
-
-# This experiment implements a synchronous create and rate task. Groups of three participants
-# are created. In each trial, each participant is first asked to type the name of a food item.
-# In a second phase of each trial, each participant chooses between the food items given by
-# the other two participants, and is then informed about the choices made by the other participants.
-
-# #############################################################################
+logger = get_logger()
 
 
-class CreateRateTrialMaker(StaticTrialMaker):
+def animal_prompt(text, img_url):
+    return ImagePrompt(
+        url=img_url,
+        text=Markup(text),
+        width="300px",
+        height="300px",
+    )
+
+
+class CreateTrial(CreateTrialMixin, ImitationChainTrial):
+    time_estimate = 5
+
+    def show_trial(self, experiment, participant):
+        return ModularPage(
+            "create_trial",
+            animal_prompt(text="Describe the animal", img_url=self.context["img_url"]),
+            TextControl(),
+            time_estimate=self.time_estimate,
+        )
+
+
+class SingleRateTrial(RateTrialMixin, ImitationChainTrial):
+    time_estimate = 5
+
+    def show_trial(self, experiment, participant):
+        assert self.trial_maker.target_selection_method == "one"
+
+        assert len(self.targets) == 1
+        target = self.targets[0]
+        creation = self.get_target_answer(target)
+        return ModularPage(
+            "rate_trial",
+            animal_prompt(
+                text=f"How well does this description match the animal?<br><strong>{creation}</strong>",
+                img_url=self.context["img_url"],
+            ),
+            PushButtonControl(
+                choices=[1, 2, 3, 4, 5],
+                labels=["not at all", "a little", "somewhat", "very", "perfectly"],
+                arrange_vertically=False,
+            ),
+        )
+
+
+class SelectTrial(SelectTrialMixin, ImitationChainTrial):
+    time_estimate = 5
+
+    def show_trial(self, experiment, participant):
+        target_strs = [f"{target}" for target in self.targets]
+        answers = [self.get_target_answer(target) for target in self.targets]
+        return ModularPage(
+            "select_trial",
+            animal_prompt(
+                text="Which of these descriptions is the best?",
+                img_url=self.context["img_url"],
+            ),
+            PushButtonControl(
+                choices=target_strs,
+                labels=answers,
+            ),
+        )
+
+
+class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker):
     pass
 
 
-class CreateRateTrial(StaticTrial):
-    time_estimate = 5
-    accumulate_answers = True
+##########################################################################################
+# Experiment
+##########################################################################################
 
-    def show_trial(self, experiment, participant):
-        return join(
-            PageMaker(self.create, time_estimate=5),
-            GroupBarrier(id_="finished_creating", group_type="create_rate"),
-            PageMaker(self.rate, time_estimate=5),
-            GroupBarrier(
-                id_="finished_rating",
-                group_type="create_rate",
-                on_release=self.save_ratings,
-            ),
-            PageMaker(self.show_ratings, time_estimate=5),
-        )
 
-    def create(self):
-        prompt = f"Type something you can have as {self.definition['target']}:"
-        return join(
-            ModularPage(
-                "create",
-                prompt,
-                TextControl(),
-                time_estimate=5,
-                save_answer="create",
-            ),
-            CodeBlock(
-                lambda participant: self.var.set("create", participant.var.create)
-            ),
-        )
+def get_trial_maker(option):
+    rater_class = SingleRateTrial
+    n_creators = 2
+    n_raters = 2
+    rate_mode = "rate"
+    include_previous_iteration = True
+    target_selection_method = "one"
 
-    def rate(self, participant):
-        prompt = f"Choose the {self.definition['target']} you prefer:"
-        return join(
-            ModularPage(
-                "rate",
-                prompt,
-                PushButtonControl(
-                    choices=self.find_creations(participant),
-                ),
-                time_estimate=5,
-                save_answer="rate",
-            ),
-            CodeBlock(lambda participant: self.var.set("rate", participant.var.rate)),
-        )
+    if option == "include_previous_iteration":
+        n_creators = 1
+        pass
+    elif option == "rate":
+        include_previous_iteration = False
+    elif option == "select":
+        rater_class = SelectTrial
+        n_raters = 3
+        target_selection_method = "all"
+        rate_mode = "select"
+    else:
+        raise ValueError(f"Unknown option: {option}")
 
-    def find_creations(self, participant):
-        creations = [
-            p.var.create
-            for p in participant.sync_group.participants
-            if p != participant
-        ]
-        random.shuffle(creations)
-        return creations
+    seed_definition = "initial creation" if include_previous_iteration else {}
+    start_nodes = [
+        CreateAndRateNode(context={"img_url": "static/dog.jpg"}, seed=seed_definition)
+    ]
 
-    def show_ratings(self, participant):
-        prompt = (
-            f"You chose {participant.var.last_trial['rating_self']}, "
-            + f"your partners chose {participant.var.last_trial['rating_others'][0]} and {participant.var.last_trial['rating_others'][1]}. "
-        )
+    return CreateAndRateTrialMaker(
+        n_creators=n_creators,
+        n_raters=n_raters,
+        node_class=CreateAndRateNode,
+        creator_class=CreateTrial,
+        rater_class=rater_class,
+        # mixin params
+        include_previous_iteration=include_previous_iteration,
+        rate_mode=rate_mode,
+        target_selection_method=target_selection_method,
+        verbose=True,  # for the demo
+        # trial_maker params
+        id_=option + "_trial_maker",
+        chain_type="across",
+        expected_trials_per_participant=len(start_nodes),
+        max_trials_per_participant=len(start_nodes),
+        start_nodes=start_nodes,
+        chains_per_experiment=len(start_nodes),
+        balance_across_chains=False,
+        check_performance_at_end=True,
+        check_performance_every_trial=False,
+        propagate_failure=False,
+        recruit_mode="n_trials",
+        target_n_participants=None,
+        wait_for_networks=False,
+        max_nodes_per_chain=10,
+    )
 
-        return InfoPage(
-            prompt,
-            time_estimate=5,
-        )
 
-    def save_ratings(self, participants: List[Participant]):
-        assert len(participants) == 3
-
-        ratings = [p.var.rate for p in participants]
-
-        for i in range(len(participants)):
-            participants[i].var.last_trial = {
-                "rating_self": ratings[i],
-                "rating_others": sorted(ratings[:i] + ratings[i + 1 :]),
-            }
+available_demos = ["include_previous_iteration", "rate", "select"]
+branches = {demo_name: get_trial_maker(demo_name) for demo_name in available_demos}
 
 
 class Exp(psynet.experiment.Experiment):
-    label = "Synchronous create and rate demo"
-
+    label = "Basic Create and Rate Experiment"
     initial_recruitment_size = 1
 
     timeline = Timeline(
-        SimpleGrouper(
-            group_type="create_rate",
-            initial_group_size=3,
+        ModularPage(
+            "pick_demo_page",
+            "Pick a demo you are interested in.",
+            PushButtonControl(
+                choices=available_demos,
+                labels=[
+                    "Rate creation + previous iteration",
+                    "Rate two creations",
+                    "Select from two creations + previous iteration",
+                ],
+            ),
+            time_estimate=1,
         ),
-        CreateRateTrialMaker(
-            id_="create_rate",
-            trial_class=CreateRateTrial,
-            nodes=[
-                StaticNode(definition={"target": target})
-                for target in ["appetizer", "main dish", "dessert"]
-            ],
-            expected_trials_per_participant=3,
-            max_trials_per_participant=3,
-            sync_group_type="create_rate",
+        switch(
+            "pick_demo_switch",
+            lambda participant: participant.answer,
+            branches=branches,
+            fix_time_credit=False,
         ),
     )
-
-    test_n_bots = 3
-    test_mode = "serial"
-
-    def test_experiment(self):
-        bots = [Bot() for _ in range(self.test_n_bots)]
-        self.test_serial_run_bots(bots)
-        self.test_check_bots(bots)
-
-    def test_serial_run_bots(self, bots: List[Bot]):
-        from psynet.page import WaitPage
-
-        advance_past_wait_pages(bots)
-
-        # CREATE 1
-        page = bots[0].get_current_page()
-        assert page.label == "create"
-        bots[0].take_page(page, response="chocolate")
-        page = bots[0].get_current_page()
-        assert isinstance(page, WaitPage)
-
-        page = bots[1].get_current_page()
-        assert page.label == "create"
-        bots[1].take_page(page, response="pudding")
-
-        page = bots[2].get_current_page()
-        assert page.label == "create"
-        bots[2].take_page(page, response="yoghurt")
-
-        advance_past_wait_pages(bots)
-
-        # RATE 1
-        page = bots[0].get_current_page()
-        assert page.label == "rate"
-        bots[0].take_page(page, response="yoghurt")
-
-        page = bots[1].get_current_page()
-        assert page.label == "rate"
-        bots[1].take_page(page, response="yoghurt")
-
-        page = bots[2].get_current_page()
-        assert page.label == "rate"
-        bots[2].take_page(page, response="pudding")
-
-        advance_past_wait_pages(bots)
-
-        pages = [bot.get_current_page() for bot in bots]
-        assert (
-            as_plain_text(pages[0].prompt.text)
-            == "You chose yoghurt, your partners chose pudding and yoghurt."
-        )
-        assert (
-            as_plain_text(pages[1].prompt.text)
-            == "You chose yoghurt, your partners chose pudding and yoghurt."
-        )
-        assert (
-            as_plain_text(pages[2].prompt.text)
-            == "You chose pudding, your partners chose yoghurt and yoghurt."
-        )
-
-        bots[0].take_page()
-        bots[1].take_page()
-        bots[2].take_page()
-        advance_past_wait_pages(bots)
-
-        # CREATE 2
-        bots[0].take_page(page, response="schnitzel")
-        bots[1].take_page(page, response="salad")
-        bots[2].take_page(page, response="burger")
-        advance_past_wait_pages(bots)
-
-        # RATE 2
-        bots[0].take_page(page, response="salad")
-        bots[1].take_page(page, response="schnitzel")
-        bots[2].take_page(page, response="salad")
-        advance_past_wait_pages(bots)
-
-        pages = [bot.get_current_page() for bot in bots]
-        assert (
-            as_plain_text(pages[0].prompt.text)
-            == "You chose salad, your partners chose salad and schnitzel."
-        )
-        assert (
-            as_plain_text(pages[1].prompt.text)
-            == "You chose schnitzel, your partners chose salad and salad."
-        )
-        assert (
-            as_plain_text(pages[2].prompt.text)
-            == "You chose salad, your partners chose salad and schnitzel."
-        )
-
-        bots[0].take_page()
-        bots[1].take_page()
-        bots[2].take_page()
-        advance_past_wait_pages(bots)
-
-        # CREATE 3
-        bots[0].take_page(page, response="melon")
-        bots[1].take_page(page, response="shrimp")
-        bots[2].take_page(page, response="soup")
-        advance_past_wait_pages(bots)
-
-        # RATE 3
-        bots[0].take_page(page, response="soup")
-        bots[1].take_page(page, response="soup")
-        bots[2].take_page(page, response="melon")
-        advance_past_wait_pages(bots)
-
-        pages = [bot.get_current_page() for bot in bots]
-        assert (
-            as_plain_text(pages[0].prompt.text)
-            == "You chose soup, your partners chose melon and soup."
-        )
-        assert (
-            as_plain_text(pages[1].prompt.text)
-            == "You chose soup, your partners chose melon and soup."
-        )
-        assert (
-            as_plain_text(pages[2].prompt.text)
-            == "You chose melon, your partners chose soup and soup."
-        )
-
-        bots[0].take_page()
-        bots[1].take_page()
-        bots[2].take_page()
-        advance_past_wait_pages(bots)
-
-        pages = [bot.get_current_page() for bot in bots]
-        for page in pages:
-            text = as_plain_text(page.prompt.text)
-            assert "That's the end of the experiment!" in text
