@@ -57,7 +57,7 @@ class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
             ),
 
 
-class FarmerTrial(RateTrialMixin, ImitationChainTrial):
+class ForagerTrial(RateTrialMixin, ImitationChainTrial):
     time_estimate = 5
 
     def show_trial(self, experiment, participant):
@@ -90,7 +90,7 @@ class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialM
 
 
 def get_trial_maker():
-    rater_class = FarmerTrial
+    rater_class = ForagerTrial
     n_creators = 1
     n_raters = 2
     rate_mode = "rate"
@@ -137,3 +137,20 @@ class Exp(psynet.experiment.Experiment):
     timeline = Timeline(
         get_trial_maker(),
     )
+
+
+###########################
+# Questions
+
+# 1. I updated something in the code, saved and when I run the experiment,
+#    I get an ERROR:root:EXPERIMENT ERROR. Neither refreshing nor restarting
+#    the experiment seem to help. I'm sure the error doesn't come from my code,
+#    it comes from psynet. What is happening?
+#
+# 2. The trials seem to be running only with ModularPage, but not with 
+#    Module or PageMaker. I need to use PageMaker or Module to be able to
+#    include more functionalities for the participants. Why is this happening?
+#
+# 3. Suppose I make the coordinator position two foragers. How do I have access
+#    to the positions of both foragers in the forager trial?
+###########################
