@@ -2,13 +2,16 @@
 ##########################################################################################
 # Imports
 ##########################################################################################
+import re
+
 from markupsafe import Markup
 
 import psynet.experiment
+from psynet.page import  InfoPage
 from psynet.modular_page import (
     ImagePrompt, ModularPage, 
     PushButtonControl, NumberControl,
-    NullControl
+    TextControl
 )
 from psynet.timeline import Timeline
 from psynet.trial.create_and_rate import (
@@ -16,17 +19,22 @@ from psynet.trial.create_and_rate import (
     CreateAndRateTrialMakerMixin,
     CreateTrialMixin,
     RateTrialMixin,
+    SelectTrialMixin,
 )
 from psynet.trial.imitation_chain import ImitationChainTrial, ImitationChainTrialMaker
 from psynet.utils import get_logger
 
+# from .coordinator import CoordinatorTrial
+# from .helper_functions import positioning_prompt
+
 logger = get_logger()
 
-
-##########################################################################################
 NUM_FORAGERS = 2
-##########################################################################################
 
+###########################################
+###########################################
+# Helper functions
+###########################################
 
 def positioning_prompt(text, img_url):
     return ImagePrompt(
@@ -35,70 +43,114 @@ def positioning_prompt(text, img_url):
         width="475px",
         height="300px",
     )
+###########################################
 
+
+###########################################
+###########################################
+# Coordinator classes
+###########################################
 
 class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
     time_estimate = 5
+    num_foragers = NUM_FORAGERS
 
     def show_trial(self, experiment, participant):
-        forager_id = (participant.id - 1) % NUM_FORAGERS
-        # return PageMaker(
-        #         lambda: InfoPage(f"Where do you want to locate forager {forager_id}?"),
-        #         time_estimate=5,
-        #     )
-        return ModularPage(
+        list_of_pages = [
+            InfoPage(
+                "This is going to be the Instructions page for the coordinator",
+                time_estimate=5
+            ),
+            ModularPage(
                 "create_trial",
                 positioning_prompt(
-                    text=f"Where do you want to locate forager {forager_id}?", 
+                    text=f"Write the coordinates of the foragers, separated by colons", 
                     img_url=self.context["img_url"]
                 ),
-                NumberControl(),
+                TextControl(),
                 time_estimate=self.time_estimate,
-            ),
+                # bot_response="23, 42" 
+            )
+        ]
+        return list_of_pages
+    
+    def format_answer(self, raw_answer, **kwargs):
+        try:
+            numbers = re.findall(r"-?\d+", raw_answer)
+            numbers = [int(n) for n in numbers]
+            return numbers
+        except (ValueError, AssertionError):
+            return "INVALID_RESPONSE"
 
+    def validate(self, response, **kwargs):
+        if response.answer == "INVALID_RESPONSE":
+            return FailedValidation(f"Please enter {self.num_foragers} numbers separated by colons")
+        return None
+###########################################
+
+
+###########################################
+###########################################
+# Forager classes
+###########################################
 
 class ForagerTrial(RateTrialMixin, ImitationChainTrial):
     time_estimate = 5
 
     def show_trial(self, experiment, participant):
         assert self.trial_maker.target_selection_method == "one"
-
         assert len(self.targets) == 1
         target = self.targets[0]
-        creation = self.get_target_answer(target)
-        return ModularPage(
-            "rate_trial",
-            positioning_prompt(
-                text=f"You have been located here:<br><strong>{target}</strong><br><strong>{creation}</strong>",
-                img_url=self.context["img_url"],
+        positions = self.get_target_answer(target)
+        forager_id = (participant.id - 1) % NUM_FORAGERS
+        try:
+            location = positions[forager_id]
+        except:
+            location = positions
+        
+        list_of_pages = [
+            InfoPage(
+                "This is going to be the Instructions page for a forager",
+                time_estimate=5
             ),
-            PushButtonControl(
-                choices=[1],
-                labels=["Continue"],
-                arrange_vertically=False,
-            ),
-        )
+            ModularPage(
+                "rate_trial",
+                positioning_prompt(
+                    text=f"You have been located here:<br><strong>{location}</strong>",
+                    img_url=self.context["img_url"],
+                ),
+                PushButtonControl(
+                    choices=[1],
+                    labels=["Continue"],
+                    arrange_vertically=False,
+                ),
+                time_estimate=self.time_estimate
+            )
+        ]
+        return list_of_pages
+###########################################
 
+###########################################
+###########################################
+# Experiment
+###########################################
 
 class CreateAndRateTrialMaker(CreateAndRateTrialMakerMixin, ImitationChainTrialMaker):
     pass
 
-
-##########################################################################################
-# Experiment
-##########################################################################################
-
-
 def get_trial_maker():
     rater_class = ForagerTrial
     n_creators = 1
-    n_raters = 2
+    n_raters = NUM_FORAGERS
     rate_mode = "rate"
     include_previous_iteration = True
     target_selection_method = "one"
 
     start_nodes = [
-        CreateAndRateNode(context={"img_url": "static/positioning.png"}, seed="initial creation")
+        CreateAndRateNode(
+            context={"img_url": "static/positioning.png"}, 
+            seed="initial creation"
+        )
     ]
 
     return CreateAndRateTrialMaker(
@@ -129,7 +181,6 @@ def get_trial_maker():
         max_nodes_per_chain=10,
     )
 
-
 class Exp(psynet.experiment.Experiment):
     label = "Basic Create and Rate Experiment"
     initial_recruitment_size = 1
@@ -138,19 +189,6 @@ class Exp(psynet.experiment.Experiment):
         get_trial_maker(),
     )
 
+    # test_n_bots = 6
 
-###########################
-# Questions
-
-# 1. I updated something in the code, saved and when I run the experiment,
-#    I get an ERROR:root:EXPERIMENT ERROR. Neither refreshing nor restarting
-#    the experiment seem to help. I'm sure the error doesn't come from my code,
-#    it comes from psynet. What is happening?
-#
-# 2. The trials seem to be running only with ModularPage, but not with 
-#    Module or PageMaker. I need to use PageMaker or Module to be able to
-#    include more functionalities for the participants. Why is this happening?
-#
-# 3. Suppose I make the coordinator position two foragers. How do I have access
-#    to the positions of both foragers in the forager trial?
-###########################
+###########################################

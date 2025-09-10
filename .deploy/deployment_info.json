@@ -6,8 +6,8 @@
     "folder_name": "experiment",
     "secret": {
         "py/object": "uuid.UUID",
-        "hex": "f3cc43218a254ffa8787ffaa2bf9e38d"
+        "hex": "9ddc6b21b05b4fa5808eff5ce7343f42"
     },
-    "deployment_id": "basic-create-and-rate-experiment__mode=debug__launch=2025-09-03--18-20-05",
+    "deployment_id": "basic-create-and-rate-experiment__mode=debug__launch=2025-09-10--17-53-17",
     "locale": "en"
 }
