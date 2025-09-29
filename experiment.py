@@ -4,14 +4,16 @@
 ##########################################################################################
 import re
 
+from typing import Union
 from markupsafe import Markup
 
 import psynet.experiment
 from psynet.page import  InfoPage
 from psynet.modular_page import (
-    ImagePrompt, ModularPage, 
-    PushButtonControl, NumberControl,
-    TextControl
+    ModularPage, 
+    Prompt, ImagePrompt,
+    Control, PushButtonControl,
+    TextControl, NullControl
 )
 from psynet.timeline import Timeline
 from psynet.trial.create_and_rate import (
@@ -32,6 +34,34 @@ logger = get_logger()
 NUM_FORAGERS = 2
 
 ###########################################
+# Custom front ends
+###########################################
+class HelloPrompt(Prompt):
+    macro = "with_hello"
+    external_template = "custom-prompts.html"
+
+    def __init__(
+            self,
+            username: str,
+            text: Union[None, str, Markup] = None,
+            text_align: str = "left",
+    ):
+        super().__init__(text=text, text_align=text_align)
+        self.username = username
+
+class ColorText(Control):
+    macro = "color_text_area"
+    external_template = "custom-controls.html"
+
+    def __init__(self, color):
+        super().__init__()
+        self.color = color
+
+    @property
+    def metadata(self):
+        return {"color": self.color}
+
+
 ###########################################
 # Helper functions
 ###########################################
@@ -47,7 +77,6 @@ def positioning_prompt(text, img_url):
 
 
 ###########################################
-###########################################
 # Coordinator classes
 ###########################################
 
@@ -58,8 +87,19 @@ class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
     def show_trial(self, experiment, participant):
         list_of_pages = [
             InfoPage(
-                "This is going to be the Instructions page for the coordinator",
+                "This is going to be the Instructions page for the COORDINATOR",
                 time_estimate=5
+            ),
+            ModularPage(
+                "test_custom_front_end",
+                HelloPrompt(
+                    username=f"{participant.id}",
+                    text="Please position the foragers on the map below."
+                ),
+                ColorText(
+                    color='#FFD580;'
+                ),
+                time_estimate=self.time_estimate
             ),
             ModularPage(
                 "create_trial",
@@ -86,10 +126,10 @@ class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
         if response.answer == "INVALID_RESPONSE":
             return FailedValidation(f"Please enter {self.num_foragers} numbers separated by colons")
         return None
+
 ###########################################
 
 
-###########################################
 ###########################################
 # Forager classes
 ###########################################
@@ -110,7 +150,7 @@ class ForagerTrial(RateTrialMixin, ImitationChainTrial):
         
         list_of_pages = [
             InfoPage(
-                "This is going to be the Instructions page for a forager",
+                "This is going to be the Instructions page for a FORAGER",
                 time_estimate=5
             ),
             ModularPage(
