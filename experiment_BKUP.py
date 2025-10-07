@@ -4,14 +4,16 @@
 ##########################################################################################
 import re
 
+from typing import Union
 from markupsafe import Markup
 
 import psynet.experiment
 from psynet.page import  InfoPage
 from psynet.modular_page import (
     ModularPage, 
-    ImagePrompt,
-    PushButtonControl
+    Prompt, ImagePrompt,
+    Control, PushButtonControl,
+    TextControl, NullControl
 )
 from psynet.timeline import Timeline
 from psynet.trial.create_and_rate import (
@@ -19,18 +21,47 @@ from psynet.trial.create_and_rate import (
     CreateAndRateTrialMakerMixin,
     CreateTrialMixin,
     RateTrialMixin,
+    SelectTrialMixin,
 )
-from psynet.trial.imitation_chain import (
-    ImitationChainTrial, 
-    ImitationChainTrialMaker
-)
+from psynet.trial.imitation_chain import ImitationChainTrial, ImitationChainTrialMaker
 from psynet.utils import get_logger
 
-from .custom_front_end import HelloPrompt, ColorText
+# from .coordinator import CoordinatorTrial
+# from .helper_functions import positioning_prompt
 
 logger = get_logger()
 
 NUM_FORAGERS = 2
+
+###########################################
+# Custom front ends
+###########################################
+class HelloPrompt(Prompt):
+    macro = "with_hello"
+    external_template = "custom-prompts.html"
+
+    def __init__(
+            self,
+            username: str,
+            text: Union[None, str, Markup] = None,
+            text_align: str = "left",
+    ):
+        super().__init__(text=text, text_align=text_align)
+        self.username = username
+
+class ColorText(Control):
+    macro = "color_text_area"
+    external_template = "custom-controls.html"
+
+    def __init__(self, color):
+        super().__init__()
+        self.color = color
+
+    @property
+    def metadata(self):
+        return {"color": self.color}
+
+###########################################
 
 
 
@@ -74,6 +105,16 @@ class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
                 ),
                 time_estimate=self.time_estimate
             ),
+            ModularPage(
+                "create_trial",
+                positioning_prompt(
+                    text=f"Write the coordinates of the foragers, separated by colons", 
+                    img_url=self.context["img_url"]
+                ),
+                TextControl(),
+                time_estimate=self.time_estimate,
+                # bot_response="23, 42" 
+            )
         ]
         return list_of_pages
     
