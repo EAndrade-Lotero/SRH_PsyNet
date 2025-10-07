@@ -4,18 +4,14 @@
 ##########################################################################################
 import re
 
-from typing import Union
 from markupsafe import Markup
 
 import psynet.experiment
 from psynet.page import  InfoPage
 from psynet.modular_page import (
     ModularPage, 
-    Prompt, 
     ImagePrompt,
-    Control, 
-    PushButtonControl,
-    TextControl, 
+    PushButtonControl
 )
 from psynet.timeline import Timeline
 from psynet.trial.create_and_rate import (
@@ -30,9 +26,12 @@ from psynet.trial.imitation_chain import (
 )
 from psynet.utils import get_logger
 
+from .custom_front_end import HelloPrompt, ColorText
+
 logger = get_logger()
 
 NUM_FORAGERS = 2
+
 
 
 ###########################################
@@ -60,16 +59,21 @@ class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
 
     def show_trial(self, experiment, participant):
         list_of_pages = [
+            InfoPage(
+                "This is going to be the Instructions page for the COORDINATOR",
+                time_estimate=5
+            ),
             ModularPage(
-                "create_trial",
-                positioning_prompt(
-                    text=f"Write the coordinates of the foragers, separated by colons", 
-                    img_url=self.context["img_url"]
+                "test_custom_front_end",
+                HelloPrompt(
+                    username=f"{participant.id}",
+                    text="Please position the foragers on the map below."
                 ),
-                TextControl(),
-                time_estimate=self.time_estimate,
-                # bot_response="23, 42" 
-            )
+                ColorText(
+                    color='#FFD580;'
+                ),
+                time_estimate=self.time_estimate
+            ),
         ]
         return list_of_pages
     
@@ -115,7 +119,7 @@ class ForagerTrial(RateTrialMixin, ImitationChainTrial):
             ModularPage(
                 "rate_trial",
                 positioning_prompt(
-                    text=f"You have been located here:<br><strong>{type(positions)}: {positions}</strong><br><strong>{location}</strong>",
+                    text=f"You have been located here:<br><strong>{location}</strong>",
                     img_url=self.context["img_url"],
                 ),
                 PushButtonControl(
