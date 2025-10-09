@@ -6,8 +6,8 @@
     "folder_name": "experiment",
     "secret": {
         "py/object": "uuid.UUID",
-        "hex": "64982d3c2df1457da693e6a8969cce80"
+        "hex": "83214cc5378b40cba608890267eedbcb"
     },
-    "deployment_id": "basic-create-and-rate-experiment__mode=debug__launch=2025-10-08--21-04-02",
+    "deployment_id": "social-roles-and-hierarchies-skeleton-experiment__mode=debug__launch=2025-10-09--14-27-39",
     "locale": "en"
 }

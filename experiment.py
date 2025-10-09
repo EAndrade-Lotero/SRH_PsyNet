@@ -5,7 +5,7 @@
 import re
 
 from typing import (
-    List, Union, Any
+    List, Tuple, Union, Any
 )
 from markupsafe import Markup
 
@@ -47,13 +47,36 @@ NUM_FORAGERS = 3
 # Helper functions
 ###########################################
 
-def positioning_prompt(text, img_url):
+def positioning_prompt(text, img_url) -> Prompt:
     return ImagePrompt(
         url=img_url,
         text=Markup(text),
         width="475px",
         height="300px",
     )
+
+def get_forager_id(
+        experiment: psynet.experiment.Experiment, 
+        participant: psynet.participant.Participant
+    ) -> int:
+    
+    # Get previous participant's ids
+    participants_id = []
+    for id in range(1, participant.id):
+        try:
+            p = experiment.get_participant_from_participant_id(id)
+            if not p.failed:
+                participants_id.append(id)
+        except:
+            pass
+            logger.info(f"Id {id} is not valid!")
+
+    logger.info(f"Participants: {participants_id}")
+
+    # Calculate id based on number of previous non failed participants
+    forager_id = (len(participants_id) % (NUM_FORAGERS + 1)) - 1
+
+    return forager_id
 
 ###########################################
 
@@ -175,30 +198,30 @@ class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
 class ForagerTrial(SelectTrialMixin, ImitationChainTrial):
     time_estimate = 5
 
-    def show_trial(self, experiment, participant):
-        # Get targets from coordinator. There should be only one target
+    def show_trial(self, experiment, participant) -> List[Any]:
+        
         assert self.trial_maker.target_selection_method == "all"
-        targets = [target for target in self.targets if isinstance(target, CoordinatorTrial)]
-        logger.info(f"{len(targets)=}")
-        assert(len(targets) == 1), f"Error: Num. targets should be 1 but got {len(targets)}!"
-        choices = [f"{target}" for target in targets]
-        target = targets[0]
 
-        # Get list of positions from target
+        # There should be only one target
+        targets = [target for target in self.targets if isinstance(target, CoordinatorTrial)]
+        assert(len(targets) == 1), f"Error: Num. targets should be 1 but got {len(targets)}!"
+
+        # Get target from coordinator
+        target = targets[0]
         if isinstance(target, CreateAndRateNode):
             target = self.get_target_answer(target)
         assert isinstance(target, CoordinatorTrial)            
+
+        # Get list of positions from target
         positions = self.get_target_answer(target)
         logger.info(f"positions: {positions}")
 
-        # Get forager id
-        forager_counter = experiment.var.forager_counter
-        logger.info(f"Forager counter: {forager_counter}")
-        forager_id = forager_counter % NUM_FORAGERS
-        assert(forager_id in list(range(NUM_FORAGERS))), f"Error: Forager id should be one of {list(range(NUM_FORAGERS))} but got {forager_id}!"
+        # Get participant info
+        logger.info(f"My id is: {participant.id}")
+
+        # Get list of previous participants
+        forager_id = get_forager_id(experiment, participant)
         logger.info(f"forager id: {forager_id}")
-        forager_counter += 1
-        experiment.var.set("forager_counter", forager_counter)
 
         # Extract forager position
         location = positions[forager_id]
@@ -215,7 +238,7 @@ class ForagerTrial(SelectTrialMixin, ImitationChainTrial):
                     img_url=self.context["img_url"],
                 ),
                 PushButtonControl(
-                    choices=choices,
+                    choices=[f"{target}" for target in targets],
                     labels=["Continue"],
                     arrange_vertically=False,
                 ),
@@ -278,11 +301,8 @@ def get_trial_maker():
     )
 
 class Exp(psynet.experiment.Experiment):
-    label = "Basic Create and Rate Experiment"
+    label = "Social roles and hierarchies skeleton experiment"
     initial_recruitment_size = 1
-    variables = {
-            "forager_counter": 0,
-    }
 
     timeline = Timeline(
         get_trial_maker(),
