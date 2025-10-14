@@ -18,11 +18,10 @@ from psynet.timeline import (
 )
 from psynet.modular_page import (
     ModularPage, 
-    Prompt, 
-    ImagePrompt,
-    Control, 
+    Prompt,
     PushButtonControl,
     TextControl,
+    SliderControl,
 )
 from psynet.trial.create_and_rate import (
     CreateAndRateNode,
@@ -40,8 +39,8 @@ from .helper_functions import (
     get_list_participants_ids,
 )
 from .custom_front_end import (
-    HelloPrompt,
     positioning_prompt,
+    HelloPrompt,
     ColorText,
 )
 
@@ -142,6 +141,9 @@ class ForagerTrial(SelectTrialMixin, ImitationChainTrial):
         
         assert self.trial_maker.target_selection_method == "all"
 
+        # Get wages_parameter from previous generation
+        wages_parameter = experiment.var.wages_parameter
+
         # There should be only one target
         targets = [target for target in self.targets if isinstance(target, CoordinatorTrial)]
         assert(len(targets) == 1), f"Error: Num. targets should be 1 but got {len(targets)}!"
@@ -174,6 +176,19 @@ class ForagerTrial(SelectTrialMixin, ImitationChainTrial):
             #     "This is going to be the Instructions page for a FORAGER",
             #     time_estimate=5
             # ),
+            # ModularPage(
+            #     "forager_wages_parameter_modification",
+            #     Prompt(
+            #         text=f"Move the slider to set a new value for the wages parameter:",
+            #     ),
+                # SliderControl(
+                #     start_value= wages_parameter,
+                #     min_value=max(wages_parameter - 0.2, 0),
+                #     max_value=min(wages_parameter + 0.2, 1),
+                #     n_steps=10000,
+                # ),
+                # time_estimate=self.time_estimate
+            # ),
             ModularPage(
                 "forager_turn",
                 positioning_prompt(
@@ -191,7 +206,7 @@ class ForagerTrial(SelectTrialMixin, ImitationChainTrial):
         return list_of_pages
 ###########################################
 
-###########################################
+
 ###########################################
 # Experiment
 ###########################################
@@ -246,6 +261,10 @@ def get_trial_maker():
 class Exp(psynet.experiment.Experiment):
     label = "Social roles and hierarchies skeleton experiment"
     initial_recruitment_size = 1
+
+    variables = {
+        "wages_parameter": 0.5,
+    }
 
     timeline = Timeline(
         get_trial_maker(),
