@@ -36,77 +36,23 @@ from psynet.trial.imitation_chain import (
     ImitationChainTrialMaker
 )
 
-# from .coordinator import CoordinatorTrial
-# from .helper_functions import positioning_prompt
+from .helper_functions import (
+    get_list_participants_ids,
+)
+from .custom_front_end import (
+    HelloPrompt,
+    positioning_prompt,
+    ColorText,
+)
 
 logger = get_logger()
 
 NUM_FORAGERS = 3
 
-###########################################
-# Helper functions
-###########################################
-
-def positioning_prompt(text, img_url) -> Prompt:
-    return ImagePrompt(
-        url=img_url,
-        text=Markup(text),
-        width="475px",
-        height="300px",
-    )
-
-def get_forager_id(
-        experiment: psynet.experiment.Experiment, 
-        participant: psynet.participant.Participant
-    ) -> int:
-    
-    # Get previous participant's ids
-    participants_id = []
-    for id in range(1, participant.id):
-        try:
-            p = experiment.get_participant_from_participant_id(id)
-            if not p.failed:
-                participants_id.append(id)
-        except:
-            pass
-            logger.info(f"Id {id} is not valid!")
-
-    logger.info(f"Participants: {participants_id}")
-
-    # Calculate id based on number of previous non failed participants
-    forager_id = (len(participants_id) % (NUM_FORAGERS + 1)) - 1
-
-    return forager_id
 
 ###########################################
-
+# Coordinator classes
 ###########################################
-# Custom front ends
-###########################################
-class HelloPrompt(Prompt):
-    macro = "with_hello"
-    external_template = "custom-prompts.html"
-
-    def __init__(
-            self,
-            username: str,
-            text: Union[None, str, Markup] = None,
-            text_align: str = "left",
-    ) -> None:
-        super().__init__(text=text, text_align=text_align)
-        self.username = username
-
-class ColorText(Control):
-    macro = "color_text_area"
-    external_template = "custom-controls.html"
-
-    def __init__(self, color) -> None:
-        super().__init__()
-        self.color = color
-
-    @property
-    def metadata(self):
-        return {"color": self.color}
 
 class AssignForagersPage(ModularPage):
     def __init__(
@@ -148,13 +94,7 @@ class AssignForagersPage(ModularPage):
             return FailedValidation(f"Please enter {self.num_foragers} numbers separated by colons")
         logger.info(f"Validated!")
         return None
-
-###########################################
-
-
-###########################################
-# Coordinator classes
-###########################################
+    
 
 class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
     time_estimate = 5
@@ -168,23 +108,23 @@ class CoordinatorTrial(CreateTrialMixin, ImitationChainTrial):
                 "This is going to be the Instructions page for the COORDINATOR",
                 time_estimate=5
             ),
-            # ModularPage(
-            #     "test_custom_front_end",
-            #     HelloPrompt(
-            #         username=f"{participant.id}",
-            #         text="Please position the foragers on the map below."
-            #     ),
-            #     ColorText(
-            #         color='#FFD580;'
-            #     ),
-            #     time_estimate=self.time_estimate
-            # ),
             AssignForagersPage(
                 context=self.context,
                 num_foragers=NUM_FORAGERS,
                 time_estimate=self.time_estimate,
                 bot_response="23, 42" 
-            )
+            ),
+            ModularPage(
+                "test_custom_front_end",
+                HelloPrompt(
+                    username=f"{participant.id}",
+                    text="Please position the foragers on the map below."
+                ),
+                ColorText(
+                    color='#FFD580;'
+                ),
+                time_estimate=self.time_estimate
+            ),
         ]
         return list_of_pages
     
@@ -220,7 +160,10 @@ class ForagerTrial(SelectTrialMixin, ImitationChainTrial):
         logger.info(f"My id is: {participant.id}")
 
         # Get list of previous participants
-        forager_id = get_forager_id(experiment, participant)
+        participants_id = get_list_participants_ids(experiment, participant)
+        # Calculate id based on number of previous non failed participants
+        forager_id = (len(participants_id) % (NUM_FORAGERS + 1)) - 1
+
         logger.info(f"forager id: {forager_id}")
 
         # Extract forager position

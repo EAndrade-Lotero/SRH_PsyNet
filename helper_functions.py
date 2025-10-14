@@ -1,47 +1,37 @@
 # Module with the helper functions
 
-from psynet.modular_page import (
-    ImagePrompt, ModularPage, 
-    PushButtonControl, NumberControl,
-    TextControl
-)
+##########################################################################################
+# Imports
+##########################################################################################
 
+from markupsafe import Markup
 
-def positioning_prompt(text, img_url):
-    return ImagePrompt(
-        url=img_url,
-        text=Markup(text),
-        width="475px",
-        height="300px",
-    )
+import psynet
+from psynet.utils import get_logger
 
+logger = get_logger()
 
-# def test_check_bots(self, bots: List[Bot]):
-#     time.sleep(2.0)
+###########################################
+# Helper functions
+###########################################
 
-#     assert len([b for b in bots if b.var.participant_group == "A"]) == 3
-#     assert len([b for b in bots if b.var.participant_group == "B"]) == 3
+def get_list_participants_ids(
+        experiment: psynet.experiment.Experiment, 
+        participant: psynet.participant.Participant
+    ) -> int:
+    
+    # Get previous participant's ids
+    participants_id = []
+    for id in range(1, participant.id):
+        try:
+            p = experiment.get_participant_from_participant_id(id)
+            if not p.failed:
+                participants_id.append(id)
+        except:
+            pass
+            logger.info(f"Id {id} is not valid!")
 
-#     for b in bots:
-#         assert len(b.alive_trials) == 7  # 4 normal trials + 3 repeat trials
-#         assert all([t.finalized for t in b.alive_trials])
+    logger.info(f"Participants: {participants_id}")
 
-#     processes = AsyncProcess.query.all()
-#     assert all([not p.failed for p in processes])
+    return participants_id
 
-#     super().test_check_bots(bots)
-
-
-# def format_answer(self, raw_answer, **kwargs):
-#     try:
-#         pattern = re.compile("^[0-9]*$")
-#         assert len(raw_answer) == self.n_digits
-#         assert pattern.match(raw_answer)
-#         return int(raw_answer)
-#     except (ValueError, AssertionError):
-#         return "INVALID_RESPONSE"
-
-# def validate(self, response, **kwargs):
-#     if response.answer == "INVALID_RESPONSE":
-#         return FailedValidation("Please enter a 7-digit number.")
-#     return None
